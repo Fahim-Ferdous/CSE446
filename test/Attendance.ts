@@ -8,21 +8,23 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 describe("Attendance", function () {
   const courseId = "course101";
   const date = (new Date()).getTime();
+  const studentId = "id1234";
 
   let attendance: Contract;
   let owner: SignerWithAddress;
   let otherAccount: SignerWithAddress;
-  
-  // The function will reset `attendance` before running each test.
-  beforeEach(async function() {
+  let manySigners: SignerWithAddress[];
+
+  let beforeEachCallbackFn = async function () {
     // Contracts are deployed using the first signer/account by default
-    [owner, otherAccount] = await ethers.getSigners();
+    [owner, otherAccount, ...manySigners] = (await ethers.getSigners()).slice(0, 4);
 
     const Attendance = await ethers.getContractFactory("Attendance");
     attendance = await Attendance.deploy(courseId, date);
-  })
+  }
 
   describe("Deployment", function () {
+    before(beforeEachCallbackFn);
     it("Should set the right date", async function () {
       expect(await attendance.date()).to.equal(date);
     });
@@ -50,24 +52,11 @@ describe("Attendance", function () {
     });
   });
 
-
   describe("EnableDisable", function () {
+    before(beforeEachCallbackFn);
+    // this.beforeEach(beforeEachCallbackFn)
     it("Should reject with the right error if attempted to enable from another account", async function () {
       await expect(attendance.connect(otherAccount).enable()).to.be.rejectedWith(
-        "method reserved for owner"
-      );
-    });
-
-    it("Should reject with the right error if attempted to enable twice", async function () {
-      await attendance.connect(owner).enable();
-
-      await expect(attendance.connect(owner).enable()).to.be.rejectedWith(
-        "cannot be enabled"
-      );
-    });
-
-    it("Should reject with the right error if attempted to disable from another account", async function () {
-      await expect(attendance.connect(otherAccount).disable()).to.be.rejectedWith(
         "method reserved for owner"
       );
     });
@@ -79,29 +68,39 @@ describe("Attendance", function () {
       );
     });
 
-    it("Should reject with the right error if attempted to enable after disabled", async function () {
-      await expect(attendance.connect(owner).enable()).to.be.not.rejected;
-      await expect(attendance.connect(owner).disable()).to.be.not.rejected;
-      await expect(attendance.connect(owner).enable()).to.be.rejectedWith(
-        "cannot be enabled"
-      );
-    });
-
     it("Should emit event upon calling enable", async function () {
       await expect(attendance.connect(owner).enable()).to.emit(
         attendance, "EnabledAttendence"
       ).withArgs(owner.address, courseId, date);
     });
 
+    it("Should reject with the right error if attempted to enable twice", async function () {
+      await expect(attendance.connect(owner).enable()).to.be.rejectedWith(
+        "cannot be enabled"
+      );
+    });
+
+    it("Should reject with the right error if attempted to disable from another account", async function () {
+      await expect(attendance.connect(otherAccount).disable()).to.be.rejectedWith(
+        "method reserved for owner"
+      );
+    });
+
     it("Should emit event upon calling disable", async function () {
-      await expect(attendance.connect(owner).enable()).to.be.not.rejected;
       await expect(attendance.connect(owner).disable()).to.emit(
         attendance, "DisabledAttendence"
       ).withArgs(owner.address, courseId, date);
     });
+
+    it("Should reject with the right error if attempted to enable after disabled", async function () {
+      await expect(attendance.connect(owner).enable()).to.be.rejectedWith(
+        "cannot be enabled"
+      );
+    });
   });
 
-  describe("GiveAttendance", function () {
+  describe("GiveAttendance", async function () {
+    before(beforeEachCallbackFn);
     it("Should reject with the right error if attempted to give attendance before enable", async function () {
       await expect(attendance.connect(otherAccount).giveAttendance("id1234")).to.be.rejectedWith(
         "not taking attendance"
@@ -114,15 +113,12 @@ describe("Attendance", function () {
     });
 
     it("Shouldn't fail if attempted to give attendance more than once", async function () {
-      await expect(attendance.connect(owner).enable()).to.be.not.rejected;
-      await expect(attendance.connect(otherAccount).giveAttendance("id1234")).to.be.not.rejected;
       await expect(attendance.connect(otherAccount).giveAttendance("id1234")).to.be.rejectedWith(
         "already given"
       );
     });
 
     it("Should reject with the right error if attempted to give attendance after disable", async function () {
-      await expect(attendance.connect(owner).enable()).to.be.not.rejected;
       await expect(attendance.connect(owner).disable()).to.be.not.rejected;
       await expect(attendance.connect(otherAccount).giveAttendance("id1234")).to.be.rejectedWith(
         "not taking attendance"
@@ -131,53 +127,56 @@ describe("Attendance", function () {
   });
 
   describe("CheckAttendance", function () {
-    it("Should never fail if attempted to check attendance", async function () {
-      const studentId = "id1234";
-
-      // Check before enabling
+    before(beforeEachCallbackFn);
+    it("Should never fail if checked before enabling", async function () {
       expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal("");
+    });
 
-      // Check after enabling
+    it("Should never fail if checked after enabling", async function () {
       await expect(attendance.connect(owner).enable()).to.be.not.rejected;
       expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal("");
+    });
 
-      // Check after giving attendance
+    it("Should never fail if checked after giving attendance", async function () {
       await expect(attendance.connect(otherAccount).giveAttendance(studentId)).to.be.not.rejected;
       expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal(studentId);
+    });
 
-      // Check after disabling but already given attendance
+    it("Should never fail if checked after disabling but already given attendance", async function () {
       await expect(attendance.connect(owner).disable()).to.be.not.rejected;
       expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal(studentId);
     });
+
+    it("Should reject with the right error if attempted to check student ID from another account", async function () {
+      await expect(attendance.connect(otherAccount).disable()).to.be.rejectedWith(
+        "method reserved for owner"
+      );
+    });
   });
 
-  it("Should reject with the right error if attempted to check student ID from another account", async function () {
-    await expect(attendance.connect(otherAccount).disable()).to.be.rejectedWith(
-      "method reserved for owner"
-    );
-  });
+  describe("TotalAttendance", function () {
+    before(beforeEachCallbackFn);
 
-  it("Should never fail if attempted to check total attendance", async function () {
-    const studentId = "id1234";
+    it("Should never fail if attempted to check before enabling", async function () {
+      expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(0);
 
-    // Check before enabling
-    expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(0);
+    });
+    it("Should never fail if attempted to check after enabling", async function () {
+      await expect(attendance.connect(owner).enable()).to.be.not.rejected;
+      expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(0);
 
-    // Check after enabling
-    await expect(attendance.connect(owner).enable()).to.be.not.rejected;
-    expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(0);
+    });
 
+    it("Should never fail if attempted to check after each giveAttendance call", async function () {
+      for (let i = 0; i < manySigners.length; i++) {
+        await expect(attendance.connect(manySigners[i]).giveAttendance(studentId + i)).to.be.not.rejected;
+        expect(await attendance.connect(manySigners[i]).totalAttendance()).to.be.equal(i + 1);
+      }
+    });
 
-    // Get multiple accounts with funds
-    let signers = await ethers.getSigners()
-    for (let i = 0; i < signers.length; i++) {
-      // Cheack after each giveAttendance call
-      await expect(attendance.connect(signers[i]).giveAttendance(studentId+i)).to.be.not.rejected;
-      expect(await attendance.connect(signers[i]).totalAttendance()).to.be.equal(i+1);
-    }
-
-    // Check after disabling
-    await expect(attendance.connect(owner).disable()).to.be.not.rejected;
-    expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(signers.length);
+    it("Should never fail if attempted to check after disabling", async function () {
+      await expect(attendance.connect(owner).disable()).to.be.not.rejected;
+      expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(manySigners.length);
+    });
   });
 });
