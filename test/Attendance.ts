@@ -128,55 +128,85 @@ describe("Attendance", function () {
 
   describe("CheckAttendance", function () {
     before(beforeEachCallbackFn);
-    it("Should never fail if checked before enabling", async function () {
-      expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal("");
-    });
 
-    it("Should never fail if checked after enabling", async function () {
-      await expect(attendance.connect(owner).enable()).to.be.not.rejected;
-      expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal("");
-    });
-
-    it("Should never fail if checked after giving attendance", async function () {
-      await expect(attendance.connect(otherAccount).giveAttendance(studentId)).to.be.not.rejected;
-      expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal(studentId);
-    });
-
-    it("Should never fail if checked after disabling but already given attendance", async function () {
-      await expect(attendance.connect(owner).disable()).to.be.not.rejected;
-      expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal(studentId);
-    });
-
-    it("Should reject with the right error if attempted to check student ID from another account", async function () {
+    it("fails if checked from another account", async function () {
       await expect(attendance.connect(otherAccount).disable()).to.be.rejectedWith(
         "method reserved for owner"
       );
+    });
+
+    describe("before enabling", async function () {
+      it("gives empty string", async function () {
+        expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal("");
+      });
+    });
+
+    describe("after enabling", async function () {
+      before(async function () {
+        await attendance.connect(owner).enable();
+      })
+
+      it("gives empty string", async function () {
+        expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal("");
+      });
+
+      describe("after giving attendance", async function () {
+        before(async function () {
+          await attendance.connect(otherAccount).giveAttendance(studentId);
+        })
+
+        it("gives student ID", async function () {
+          expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal(studentId);
+        });
+
+        describe("after disabling but already given attendance", async function () {
+          before(async function () {
+            await attendance.connect(owner).disable();
+          })
+
+          it("gives student ID", async function () {
+            expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal(studentId);
+          });
+        });
+      });
+    });
+
+    describe("after enabling and disabling without attendance", async function () {
+      before(beforeEachCallbackFn);
+      before(async function () {
+        await attendance.connect(owner).enable();
+      });
+
+      it("gives empty string", async function () {
+        expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal("");
+      });
     });
   });
 
   describe("TotalAttendance", function () {
     before(beforeEachCallbackFn);
+    describe("Should never fail if checked", async function () {
+      it("before enabling", async function () {
+        expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(0);
 
-    it("Should never fail if attempted to check before enabling", async function () {
-      expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(0);
+      });
+      it("after enabling", async function () {
+        await expect(attendance.connect(owner).enable()).to.be.not.rejected;
+        expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(0);
 
-    });
-    it("Should never fail if attempted to check after enabling", async function () {
-      await expect(attendance.connect(owner).enable()).to.be.not.rejected;
-      expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(0);
+      });
 
-    });
+      it("after each giveAttendance call", async function () {
+        for (let i = 0; i < manySigners.length; i++) {
+          await expect(attendance.connect(manySigners[i]).giveAttendance(studentId + i)).to.be.not.rejected;
+          expect(await attendance.connect(manySigners[i]).totalAttendance()).to.be.equal(i + 1);
+        }
+      });
 
-    it("Should never fail if attempted to check after each giveAttendance call", async function () {
-      for (let i = 0; i < manySigners.length; i++) {
-        await expect(attendance.connect(manySigners[i]).giveAttendance(studentId + i)).to.be.not.rejected;
-        expect(await attendance.connect(manySigners[i]).totalAttendance()).to.be.equal(i + 1);
-      }
-    });
-
-    it("Should never fail if attempted to check after disabling", async function () {
-      await expect(attendance.connect(owner).disable()).to.be.not.rejected;
-      expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(manySigners.length);
+      it("after disabling", async function () {
+        await expect(attendance.connect(owner).disable()).to.be.not.rejected;
+        expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(manySigners.length);
+      });
     });
   });
 });
