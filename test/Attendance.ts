@@ -1,35 +1,33 @@
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
-import { randomBytes, sign } from "crypto";
+import { randomBytes, Sign, sign } from "crypto";
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { Contract } from "ethers";
+import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 describe("Attendance", function () {
-  // We define a fixture to reuse the same setup in every test.
-  // We use loadFixture to run this setup once, snapshot that state,
-  // and reset Hardhat Network to that snapshopt in every test.
-  async function deployAttendanceFixture() {
-    const date = (new Date()).getTime();
-    const courseId = "course101";
+  const courseId = "course101";
+  const date = (new Date()).getTime();
 
+  let attendance: Contract;
+  let owner: SignerWithAddress;
+  let otherAccount: SignerWithAddress;
+  
+  // The function will reset `attendance` before running each test.
+  beforeEach(async function() {
     // Contracts are deployed using the first signer/account by default
-    const [owner, otherAccount] = await ethers.getSigners();
+    [owner, otherAccount] = await ethers.getSigners();
 
     const Attendance = await ethers.getContractFactory("Attendance");
-    const attendance = await Attendance.deploy(courseId, date);
-
-    return { attendance, courseId, date, owner, otherAccount };
-  }
+    attendance = await Attendance.deploy(courseId, date);
+  })
 
   describe("Deployment", function () {
     it("Should set the right date", async function () {
-      const { attendance, date } = await loadFixture(deployAttendanceFixture);
-
       expect(await attendance.date()).to.equal(date);
     });
 
     it("Should set the right owner", async function () {
-      const { attendance, owner } = await loadFixture(deployAttendanceFixture);
-
       expect(await attendance.owner()).to.equal(owner.address);
     });
 
@@ -55,22 +53,13 @@ describe("Attendance", function () {
 
   describe("EnableDisable", function () {
     it("Should reject with the right error if attempted to enable from another account", async function () {
-      const { attendance, otherAccount } = await loadFixture(
-        deployAttendanceFixture
-      );
-
       await expect(attendance.connect(otherAccount).enable()).to.be.rejectedWith(
         "method reserved for owner"
       );
     });
 
     it("Should reject with the right error if attempted to enable twice", async function () {
-      const { attendance, owner } = await loadFixture(
-        deployAttendanceFixture
-      );
-
-      // console.log("State:", await attendance.connect(owner).state());
-      await expect(attendance.connect(owner).enable()).to.be.not.rejected;
+      await attendance.connect(owner).enable();
 
       await expect(attendance.connect(owner).enable()).to.be.rejectedWith(
         "cannot be enabled"
@@ -78,20 +67,12 @@ describe("Attendance", function () {
     });
 
     it("Should reject with the right error if attempted to disable from another account", async function () {
-      const { attendance, otherAccount } = await loadFixture(
-        deployAttendanceFixture
-      );
-
       await expect(attendance.connect(otherAccount).disable()).to.be.rejectedWith(
         "method reserved for owner"
       );
     });
 
     it("Should reject with the right error if attempted to disable without enabling", async function () {
-      const { attendance, owner } = await loadFixture(
-        deployAttendanceFixture
-      );
-
       // console.log(await attendance.connect(owner).disable())
       await expect(attendance.connect(owner).disable()).to.be.rejectedWith(
         "cannot be disabled"
@@ -99,10 +80,6 @@ describe("Attendance", function () {
     });
 
     it("Should reject with the right error if attempted to enable after disabled", async function () {
-      const { attendance, owner } = await loadFixture(
-        deployAttendanceFixture
-      );
-
       await expect(attendance.connect(owner).enable()).to.be.not.rejected;
       await expect(attendance.connect(owner).disable()).to.be.not.rejected;
       await expect(attendance.connect(owner).enable()).to.be.rejectedWith(
@@ -111,20 +88,12 @@ describe("Attendance", function () {
     });
 
     it("Should emit event upon calling enable", async function () {
-      const { attendance, courseId, date, owner } = await loadFixture(
-        deployAttendanceFixture
-      );
-
       await expect(attendance.connect(owner).enable()).to.emit(
         attendance, "EnabledAttendence"
       ).withArgs(owner.address, courseId, date);
     });
 
     it("Should emit event upon calling disable", async function () {
-      const { attendance, courseId, date, owner } = await loadFixture(
-        deployAttendanceFixture
-      );
-
       await expect(attendance.connect(owner).enable()).to.be.not.rejected;
       await expect(attendance.connect(owner).disable()).to.emit(
         attendance, "DisabledAttendence"
@@ -134,29 +103,17 @@ describe("Attendance", function () {
 
   describe("GiveAttendance", function () {
     it("Should reject with the right error if attempted to give attendance before enable", async function () {
-      const { attendance, otherAccount } = await loadFixture(
-        deployAttendanceFixture
-      );
-
       await expect(attendance.connect(otherAccount).giveAttendance("id1234")).to.be.rejectedWith(
         "not taking attendance"
       );
     });
 
     it("Shouldn't fail if attempted to give attendance after enable", async function () {
-      const { attendance, owner, otherAccount } = await loadFixture(
-        deployAttendanceFixture
-      );
-
       await expect(attendance.connect(owner).enable()).to.be.not.rejected;
       await expect(attendance.connect(otherAccount).giveAttendance("id1234")).to.be.not.rejected;
     });
 
     it("Shouldn't fail if attempted to give attendance more than once", async function () {
-      const { attendance, owner, otherAccount } = await loadFixture(
-        deployAttendanceFixture
-      );
-
       await expect(attendance.connect(owner).enable()).to.be.not.rejected;
       await expect(attendance.connect(otherAccount).giveAttendance("id1234")).to.be.not.rejected;
       await expect(attendance.connect(otherAccount).giveAttendance("id1234")).to.be.rejectedWith(
@@ -165,10 +122,6 @@ describe("Attendance", function () {
     });
 
     it("Should reject with the right error if attempted to give attendance after disable", async function () {
-      const { attendance, owner, otherAccount } = await loadFixture(
-        deployAttendanceFixture
-      );
-
       await expect(attendance.connect(owner).enable()).to.be.not.rejected;
       await expect(attendance.connect(owner).disable()).to.be.not.rejected;
       await expect(attendance.connect(otherAccount).giveAttendance("id1234")).to.be.rejectedWith(
@@ -179,10 +132,6 @@ describe("Attendance", function () {
 
   describe("CheckAttendance", function () {
     it("Should never fail if attempted to check attendance", async function () {
-      const { attendance, owner, otherAccount } = await loadFixture(
-        deployAttendanceFixture
-      );
-
       const studentId = "id1234";
 
       // Check before enabling
@@ -203,20 +152,12 @@ describe("Attendance", function () {
   });
 
   it("Should reject with the right error if attempted to check student ID from another account", async function () {
-    const { attendance, otherAccount } = await loadFixture(
-      deployAttendanceFixture
-    );
-
     await expect(attendance.connect(otherAccount).disable()).to.be.rejectedWith(
       "method reserved for owner"
     );
   });
 
   it("Should never fail if attempted to check total attendance", async function () {
-    const { attendance, owner, otherAccount } = await loadFixture(
-      deployAttendanceFixture
-    );
-
     const studentId = "id1234";
 
     // Check before enabling
