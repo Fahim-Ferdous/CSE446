@@ -16,7 +16,7 @@ describe("Attendance", function () {
   let manySigners: SignerWithAddress[];
 
   let prepareEnv = async function () {
-    // Contracts are deployed using the first signer/account by default
+    // Take only 4 so that we can save time when testing GiveAttendance with multiple addresses.
     [owner, otherAccount, ...manySigners] = (await ethers.getSigners()).slice(0, 4);
 
     const Attendance = await ethers.getContractFactory("Attendance");
@@ -25,24 +25,26 @@ describe("Attendance", function () {
 
   describe("Deployment", function () {
     before(prepareEnv);
-    it("right date", async function () {
+    it("returns accurate date", async function () {
       expect(await attendance.date()).to.equal(date);
     });
 
-    it("right owner", async function () {
+    it("returns accurate owner", async function () {
       expect(await attendance.owner()).to.equal(owner.address);
     });
 
-    describe("fails if", async function () {
-      it("course ID is empty", async function () {
+    describe("course ID is empty", async function () {
+      it("fails", async function () {
         // We don't use the fixture here because we want a different deployment
         const Attendance = await ethers.getContractFactory("Attendance");
         await expect(Attendance.deploy("", date)).to.be.rejectedWith(
           "missing _courseId"
         );
       });
-  
-      it("date is not in the future", async function () {
+    });
+
+    describe("date is not in the future", async function () {
+      it("fails", async function () {
         // We don't use the fixture here because we want a different deployment
         const date = 123456;
         const Attendance = await ethers.getContractFactory("Attendance");
@@ -50,54 +52,41 @@ describe("Attendance", function () {
           "_date must be in the future"
         );
       });
-      
-    })
+    });
   });
 
   describe("EnableDisable", function () {
     before(prepareEnv);
-    // this.beforeEach(beforeEachCallbackFn)
-    it("Should reject with the right error if attempted to enable from another account", async function () {
-      await expect(attendance.connect(otherAccount).enable()).to.be.rejectedWith(
+    it("fails without owner", async function () {
+      await expect(attendance.connect(otherAccount).flickSwitch()).to.be.rejectedWith(
         "method reserved for owner"
       );
     });
 
-    it("Should reject with the right error if attempted to disable without enabling", async function () {
-      // console.log(await attendance.connect(owner).disable())
-      await expect(attendance.connect(owner).disable()).to.be.rejectedWith(
-        "cannot be disabled"
-      );
+    // No need to test whether they were rejected, since nothing
+    // will be written to the blockchain if transaction fails.
+    describe("floating", async function () {
+      it("emits enabled", async function () {
+        await expect(attendance.connect(owner).flickSwitch()).to.emit(
+          attendance, "EnabledAttendence"
+        ).withArgs(owner.address, courseId, date);
+      });
     });
 
-    it("Should emit event upon calling enable", async function () {
-      await expect(attendance.connect(owner).enable()).to.emit(
-        attendance, "EnabledAttendence"
-      ).withArgs(owner.address, courseId, date);
+    describe("enable", async function () {
+      it("emits disabled", async function () {
+        await expect(attendance.connect(owner).flickSwitch()).to.emit(
+          attendance, "DisabledAttendence"
+        ).withArgs(owner.address, courseId, date);
+      });
     });
 
-    it("Should reject with the right error if attempted to enable twice", async function () {
-      await expect(attendance.connect(owner).enable()).to.be.rejectedWith(
-        "cannot be enabled"
-      );
-    });
-
-    it("Should reject with the right error if attempted to disable from another account", async function () {
-      await expect(attendance.connect(otherAccount).disable()).to.be.rejectedWith(
-        "method reserved for owner"
-      );
-    });
-
-    it("Should emit event upon calling disable", async function () {
-      await expect(attendance.connect(owner).disable()).to.emit(
-        attendance, "DisabledAttendence"
-      ).withArgs(owner.address, courseId, date);
-    });
-
-    it("Should reject with the right error if attempted to enable disabled", async function () {
-      await expect(attendance.connect(owner).enable()).to.be.rejectedWith(
-        "cannot be enabled"
-      );
+    describe("disable", async function () {
+      it("fails", async function () {
+        await expect(attendance.connect(owner).flickSwitch()).to.be.rejectedWith(
+          "attendance is disabled"
+        );
+      });
     });
   });
 
@@ -111,7 +100,7 @@ describe("Attendance", function () {
 
     describe("enable", async function () {
       before(async function () {
-        await attendance.connect(owner).enable();
+        await attendance.connect(owner).flickSwitch();
       });
 
       it("doesn't fail first time", async function () {
@@ -126,7 +115,7 @@ describe("Attendance", function () {
 
       describe("disable", async function () {
         before(async function () {
-          await attendance.connect(owner).disable();
+          await attendance.connect(owner).flickSwitch();
         });
 
         it("fails", async function () {
@@ -147,8 +136,8 @@ describe("Attendance", function () {
 
     describe("enable", async function () {
       before(async function () {
-        await attendance.connect(owner).enable();
-      })
+        await attendance.connect(owner).flickSwitch();
+      });
 
       it("returns empty string", async function () {
         expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal("");
@@ -157,7 +146,7 @@ describe("Attendance", function () {
       describe("attendance", async function () {
         before(async function () {
           await attendance.connect(otherAccount).giveAttendance(studentId);
-        })
+        });
 
 
         describe("CheckAttendanceByStudentId", function () {
@@ -176,8 +165,8 @@ describe("Attendance", function () {
 
         describe("disable", async function () {
           before(async function () {
-            await attendance.connect(owner).disable();
-          })
+            await attendance.connect(owner).flickSwitch();
+          });
 
           it("returns student ID", async function () {
             expect(await attendance.connect(otherAccount).checkAttendance()).to.be.equal(studentId);
@@ -189,7 +178,7 @@ describe("Attendance", function () {
     describe("enable and disable without attendance", async function () {
       before(prepareEnv);
       before(async function () {
-        await attendance.connect(owner).enable();
+        await attendance.connect(owner).flickSwitch();
       });
 
       it("returns empty string", async function () {
@@ -214,10 +203,10 @@ describe("Attendance", function () {
 
     describe("enable", async function () {
       before(async function () {
-        await attendance.connect(owner).enable();
+        await attendance.connect(owner).flickSwitch();
       });
 
-      it("is zero", async function () {
+      it("returns zero", async function () {
         expect(await attendance.connect(otherAccount).totalAttendance()).to.be.equal(0);
       });
 
@@ -234,7 +223,7 @@ describe("Attendance", function () {
 
         describe("disable", async function () {
           before(async function () {
-            await attendance.connect(owner).disable();
+            await attendance.connect(owner).flickSwitch();
           });
 
           it("preserves counter", async function () {

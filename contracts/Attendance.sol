@@ -3,6 +3,7 @@ pragma solidity ^0.8.9;
 
 // Import this file to use console.log
 import "hardhat/console.sol";
+
 contract Attendance {
     // The state of this particular deployment
     enum LocalState {
@@ -35,22 +36,18 @@ contract Attendance {
         owner = msg.sender;
     }
 
-    function enable() public {
+    // flickSwitch enables from floating state and then disables from enabled state.
+    function flickSwitch() public {
         require(owner == msg.sender, "method reserved for owner");
-        require(state == LocalState.Floating, "cannot be enabled");
+        require(state != LocalState.Disabled, "attendance is disabled");
 
-        state = LocalState.Enabled;
-
-        emit EnabledAttendence(owner, courseId, date);
-    }
-
-    function disable() public {
-        require(owner == msg.sender, "method reserved for owner");
-        require(state == LocalState.Enabled, "cannot be disabled");
-
-        state = LocalState.Disabled;
-
-        emit DisabledAttendence(owner, courseId, date);
+        if (state == LocalState.Floating) {
+            state = LocalState.Enabled;
+            emit EnabledAttendence(owner, courseId, date);
+        } else if (state == LocalState.Enabled) {
+            state = LocalState.Disabled;
+            emit DisabledAttendence(owner, courseId, date);
+        }
     }
 
     function giveAttendance(string memory _studentId) public {
